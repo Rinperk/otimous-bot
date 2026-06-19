@@ -4,9 +4,12 @@ from discord.ext import commands, tasks
 
 import time
 
-from utils.config_manager import (
-    load_configs,
-    save_configs
+from utils.database import (
+    save_config,
+    get_config,
+    get_all_configs,
+    update_last_sent,
+    remove_config,
 )
 
 class AvatarScheduler(commands.Cog):
@@ -29,17 +32,14 @@ class AvatarScheduler(commands.Cog):
         canal: discord.TextChannel,
         intervalo: app_commands.Range[int, 1, 10080]
     ):
-        configs = load_configs()
-        
-        configs[str(interaction.guild.id)] = {
-            "member_id": usuario.id,
-            "channel_id": canal.id,
-            "interval_minutes": intervalo,
-            "last_sent": 0
-        }
-        
-        save_configs(configs)
-        
+        # Persist using SQLite helper
+        save_config(
+            interaction.guild.id,
+            usuario.id,
+            canal.id,
+            intervalo
+        )
+
         await interaction.response.send_message(
             f"Avatar de {usuario.mention} será enviado em {canal.mention} a cada {intervalo} minuto(s).",
             allowed_mentions=discord.AllowedMentions.none()
@@ -55,30 +55,21 @@ class AvatarScheduler(commands.Cog):
         self,
         interaction: discord.Interaction
     ):
-        configs = load_configs()
+        row = get_config(interaction.guild.id)
 
-        config = configs.get(
-            str(interaction.guild.id)
-        )
-
-        if not config:
+        if not row:
             return await interaction.response.send_message(
                 "Nenhuma configuração encontrada.",
                 ephemeral=True
             )
 
-        membro = interaction.guild.get_member(
-            config["member_id"]
-        )
-
-        canal = interaction.guild.get_channel(
-            config["channel_id"]
-        )
-        
+        # row: (guild_id, member_id, channel_id, interval_minutes, last_sent)
+        membro = interaction.guild.get_member(row[1])
+        canal = interaction.guild.get_channel(row[2])
         agora = int(time.time())
-        
-        intervalo_segundos = config["interval_minutes"] * 60
-        proximo_envio = config["last_sent"] + intervalo_segundos
+
+        intervalo_segundos = row[3] * 60
+        proximo_envio = row[4] + intervalo_segundos
         restante = max(0, proximo_envio - agora)
         minutos = restante // 60
         segundos = restante % 60
@@ -87,7 +78,7 @@ class AvatarScheduler(commands.Cog):
             f"""
 Usuário: {membro.mention if membro else 'Não encontrado'}
 Canal: {canal.mention if canal else 'Não encontrado'}
-Intervalo: {config['interval_minutes']} minuto(s)
+Intervalo: {row[3]} minuto(s)
 Próximo envio em: {minutos}m {segundos}s
 """,
             allowed_mentions=discord.AllowedMentions.none()
@@ -102,12 +93,7 @@ Próximo envio em: {minutos}m {segundos}s
         self,
         interaction: discord.Interaction
     ):
-        configs = load_configs()
-
-        if str(interaction.guild.id) in configs:
-            del configs[str(interaction.guild.id)]
-
-            save_configs(configs)
+        remove_config(interaction.guild.id)
 
         await interaction.response.send_message(
             "Configuração removida."
@@ -115,31 +101,26 @@ Próximo envio em: {minutos}m {segundos}s
 
     @tasks.loop(seconds=30)
     async def avatar_loop(self):
-        configs = load_configs()
+        rows = get_all_configs()
 
         now = int(time.time())
 
-        for guild_id, config in configs.items():
+        for row in rows:
+            guild_id, member_id, channel_id, interval_minutes, last_sent = row
 
-            intervalo = config["interval_minutes"] * 60
+            intervalo = interval_minutes * 60
 
-            if now - config["last_sent"] < intervalo:
+            if now - last_sent < intervalo:
                 continue
 
-            guild = self.bot.get_guild(
-                int(guild_id)
-            )
+            guild = self.bot.get_guild(guild_id)
 
             if guild is None:
                 continue
 
-            canal = guild.get_channel(
-                config["channel_id"]
-            )
+            canal = guild.get_channel(channel_id)
 
-            membro = guild.get_member(
-                config["member_id"]
-            )
+            membro = guild.get_member(member_id)
 
             if canal is None or membro is None:
                 continue
@@ -154,9 +135,7 @@ Próximo envio em: {minutos}m {segundos}s
 
             await canal.send(embed=embed)
 
-            config["last_sent"] = now
-
-        save_configs(configs)
+            update_last_sent(guild_id, now)
 
     @avatar_loop.before_loop
     async def before_loop(self):
