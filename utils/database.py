@@ -1,12 +1,30 @@
 from pathlib import Path
+import os
 import sqlite3
 from typing import List, Optional, Tuple
 
-DB_FILE = Path("data") / "avatar.db"
-DB_FILE.parent.mkdir(parents=True, exist_ok=True)
+# Allow overriding DB path via env (Railway persistent volume e.g. /data/avatar.db)
+DB_PATH = os.getenv("DB_PATH", "data/avatar.db")
 
-conn = sqlite3.connect(str(DB_FILE), check_same_thread=False)
+# If DB_PATH is a plain filesystem path, ensure its parent exists
+_using_uri = DB_PATH.startswith("file:") or DB_PATH.startswith("sqlite:")
+if not _using_uri:
+    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+
+# Build SQLite URI with shared cache for slightly better concurrency when using a mounted volume
+if _using_uri:
+    _uri = DB_PATH
+else:
+    # file:/absolute/path or relative paths both work
+    _uri = f"file:{DB_PATH}?cache=shared"
+
+conn = sqlite3.connect(_uri, uri=True, check_same_thread=False, timeout=30)
 cursor = conn.cursor()
+
+# Recommended PRAGMAs for durability and concurrent reads
+cursor.execute("PRAGMA journal_mode=WAL;")
+cursor.execute("PRAGMA synchronous=NORMAL;")
+cursor.execute("PRAGMA foreign_keys=ON;")
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS avatar_schedule (
