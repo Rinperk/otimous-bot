@@ -10,7 +10,19 @@ load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 
-handler = logging.FileHandler(filename="discord.log", encoding="utf-8", mode="w")
+file_handler = logging.FileHandler(filename="discord.log", encoding="utf-8", mode="w")
+stream_handler = logging.StreamHandler()
+formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s')
+file_handler.setFormatter(formatter)
+stream_handler.setFormatter(formatter)
+# Configure root logger so logs appear both in file and stdout (Railway logs)
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.DEBUG)
+# Avoid adding duplicate handlers if module reloaded
+if not any(isinstance(h, logging.FileHandler) for h in root_logger.handlers):
+    root_logger.addHandler(file_handler)
+if not any(isinstance(h, logging.StreamHandler) for h in root_logger.handlers):
+    root_logger.addHandler(stream_handler)
 
 class Otimous(commands.Bot):
     def __init__(self):
@@ -41,4 +53,4 @@ class Otimous(commands.Bot):
             print(e)
 
 bot = Otimous()
-bot.run(TOKEN, log_handler=handler, log_level=logging.DEBUG)
+bot.run(TOKEN, log_level=logging.DEBUG)
