@@ -1,10 +1,7 @@
 # Otimous Bot
 
-Run locally:
+Bot desenvolvido em Python utilizando `discord.py`.
 
-- Set DISCORD_TOKEN in .env
-- pip install -r requirements.txt
-- python main.py
-
-DB: set DB_PATH (ex: /data/avatar.db) if using a persistent volume.
-
+* Python 3.11+
+* discord.py 2.x
+* SQLite
