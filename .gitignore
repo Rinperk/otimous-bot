@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.env
+configs.json
+data/*.json
+.vscode/
